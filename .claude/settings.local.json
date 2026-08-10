@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd *)",
+      "Bash(python -m pytest -v)",
+      "Bash(python -m pip install --quiet pytest openpyxl)",
+      "Bash(python -m pytest -q)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import streamlit; print\\(streamlit.__version__\\)\")"
+    ]
+  }
+}

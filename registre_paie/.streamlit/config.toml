@@ -1,0 +1,14 @@
+[theme]
+# Palette extraite du site https://maau-academy.com/ (thème Edubin) :
+# --edubin-color-secondary / --edubin-color-btn-bg : #94c93d (vert boutons)
+# --edubin-primary-color / --edubin-heading-color   : #004f27 (vert foncé)
+# --edubin-primary-color-alt                        : #fffaee (fond crème)
+# --edubin-color-body                               : #333333 (texte)
+primaryColor = "#94c93d"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#fffaee"
+textColor = "#333333"
+font = "sans serif"
+
+[server]
+headless = true
