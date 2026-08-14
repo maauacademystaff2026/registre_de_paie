@@ -33,9 +33,21 @@ def connecter(chemin: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA_SQL)
+    _migrer_schema(conn)
     _initialiser_bareme_si_vide(conn)
     conn.commit()
     return conn
+
+
+def _migrer_schema(conn: sqlite3.Connection) -> None:
+    """`CREATE TABLE IF NOT EXISTS` (schema.sql) ne retrofit pas de colonne sur une
+    table déjà existante d'une DB déployée avant l'ajout des exceptions V2 : on
+    l'ajoute ici si absente, sans jamais toucher aux lignes déjà enregistrées."""
+    colonnes = {ligne["name"] for ligne in conn.execute("PRAGMA table_info(details_seances)")}
+    if "tarif_exceptionnel" not in colonnes:
+        conn.execute(
+            "ALTER TABLE details_seances ADD COLUMN tarif_exceptionnel INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _initialiser_bareme_si_vide(conn: sqlite3.Connection) -> None:
@@ -76,6 +88,63 @@ def definir_exclusion(conn: sqlite3.Connection, nom: str, exclu: bool) -> None:
         "INSERT INTO personnes (nom, exclu) VALUES (?, ?) "
         "ON CONFLICT(nom) DO UPDATE SET exclu = excluded.exclu",
         (nom, int(exclu)),
+    )
+    conn.commit()
+
+
+# --- Exceptions de tarification V2 (§7-C, §10) ------------------------------
+
+
+def lire_exceptions_enseignant(conn: sqlite3.Connection) -> dict[tuple[str, str], float]:
+    lignes = conn.execute(
+        "SELECT enseignant, categorie, tarif_horaire FROM exceptions_enseignant"
+    ).fetchall()
+    return {(l["enseignant"], l["categorie"]): l["tarif_horaire"] for l in lignes}
+
+
+def definir_exception_enseignant(
+    conn: sqlite3.Connection, enseignant: str, categorie: str, tarif_horaire: float
+) -> None:
+    conn.execute(
+        "INSERT INTO exceptions_enseignant (enseignant, categorie, tarif_horaire) "
+        "VALUES (?, ?, ?) ON CONFLICT(enseignant, categorie) "
+        "DO UPDATE SET tarif_horaire = excluded.tarif_horaire",
+        (enseignant, categorie, tarif_horaire),
+    )
+    conn.commit()
+
+
+def supprimer_exception_enseignant(conn: sqlite3.Connection, enseignant: str, categorie: str) -> None:
+    conn.execute(
+        "DELETE FROM exceptions_enseignant WHERE enseignant = ? AND categorie = ?",
+        (enseignant, categorie),
+    )
+    conn.commit()
+
+
+def lire_exceptions_eleve(conn: sqlite3.Connection) -> dict[tuple[str, str], float]:
+    lignes = conn.execute(
+        "SELECT eleve_nom, eleve_prenom, tarif_horaire FROM exceptions_eleve"
+    ).fetchall()
+    return {(l["eleve_nom"], l["eleve_prenom"]): l["tarif_horaire"] for l in lignes}
+
+
+def definir_exception_eleve(
+    conn: sqlite3.Connection, eleve_nom: str, eleve_prenom: str, tarif_horaire: float
+) -> None:
+    conn.execute(
+        "INSERT INTO exceptions_eleve (eleve_nom, eleve_prenom, tarif_horaire) "
+        "VALUES (?, ?, ?) ON CONFLICT(eleve_nom, eleve_prenom) "
+        "DO UPDATE SET tarif_horaire = excluded.tarif_horaire",
+        (eleve_nom, eleve_prenom, tarif_horaire),
+    )
+    conn.commit()
+
+
+def supprimer_exception_eleve(conn: sqlite3.Connection, eleve_nom: str, eleve_prenom: str) -> None:
+    conn.execute(
+        "DELETE FROM exceptions_eleve WHERE eleve_nom = ? AND eleve_prenom = ?",
+        (eleve_nom, eleve_prenom),
     )
     conn.commit()
 
@@ -141,8 +210,9 @@ def enregistrer_calcul_mensuel(
             conn.executemany(
                 "INSERT INTO details_seances "
                 "(resultat_personne_id, eleve_nom, eleve_prenom, date, classe, niveau_resolu, "
-                "matiere, duree_minutes, categorie_tarif, source_tarif, tarif_horaire, montant) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "matiere, duree_minutes, categorie_tarif, source_tarif, tarif_horaire, montant, "
+                "tarif_exceptionnel) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     (
                         resultat_personne_id,
@@ -157,6 +227,7 @@ def enregistrer_calcul_mensuel(
                         d.source_tarif,
                         d.tarif_horaire,
                         d.montant,
+                        int(d.tarif_exceptionnel),
                     )
                     for d in resultat_personne.details
                 ),
@@ -258,7 +329,8 @@ def charger_details_seances(conn: sqlite3.Connection, resultat_personne_id: int)
     """Détail par séance d'une personne pour un mois donné (§8.2, audit)."""
     return conn.execute(
         "SELECT eleve_nom, eleve_prenom, date, classe, niveau_resolu, matiere, "
-        "duree_minutes, categorie_tarif, source_tarif, tarif_horaire, montant "
+        "duree_minutes, categorie_tarif, source_tarif, tarif_horaire, montant, "
+        "tarif_exceptionnel "
         "FROM details_seances WHERE resultat_personne_id = ? ORDER BY date",
         (resultat_personne_id,),
     ).fetchall()

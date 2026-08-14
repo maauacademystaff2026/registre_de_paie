@@ -30,10 +30,11 @@ _EN_TETES_DETAIL = (
     "Durée (H)",
     "Tarif appliqué (F CFA/h)",
     "Source du tarif",
+    "Personnalisé",
     "Montant (F CFA)",
 )
 
-_LABEL_SOURCE_TARIF = {"langue": "Langue", "niveau": "Niveau"}
+_LABEL_SOURCE_TARIF = {"langue": "Langue", "niveau": "Niveau", "eleve": "Élève (forcé)"}
 
 
 def _ecrire_feuille_resultats(feuille: Worksheet, resultat: ResultatCalculMensuel) -> None:
@@ -75,6 +76,7 @@ def _ecrire_feuille_detail(feuille: Worksheet, resultat: ResultatCalculMensuel) 
                     minutes_to_hhmm(d.duree_minutes),
                     d.tarif_horaire,
                     _LABEL_SOURCE_TARIF.get(d.source_tarif, d.source_tarif),
+                    "Oui" if d.tarif_exceptionnel else "",
                     d.montant,
                 )
             )

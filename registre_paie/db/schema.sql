@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS details_seances (
     categorie_tarif TEXT NOT NULL,
     source_tarif TEXT NOT NULL,
     tarif_horaire REAL NOT NULL,
-    montant REAL NOT NULL
+    montant REAL NOT NULL,
+    tarif_exceptionnel INTEGER NOT NULL DEFAULT 0 CHECK (tarif_exceptionnel IN (0, 1))
 );
 
 CREATE INDEX IF NOT EXISTS idx_details_seances_resultat ON details_seances (resultat_personne_id);
@@ -99,4 +100,22 @@ CREATE TABLE IF NOT EXISTS brouillon_calcul (
     mois INTEGER NOT NULL,
     donnees BLOB NOT NULL,
     date_maj TEXT NOT NULL
+);
+
+-- V2 (PRD §7-C, §10) : tarif personnalisé par (enseignant, catégorie), remplace le tarif du
+-- barème global pour cette catégorie uniquement quand cet enseignant l'enseigne.
+CREATE TABLE IF NOT EXISTS exceptions_enseignant (
+    enseignant TEXT NOT NULL,
+    categorie TEXT NOT NULL,
+    tarif_horaire REAL NOT NULL,
+    PRIMARY KEY (enseignant, categorie)
+);
+
+-- V2 (PRD §10) : tarif forcé pour un élève nommé, indépendant de la matière et du niveau.
+-- Priorité sur exceptions_enseignant (règle confirmée : le tarif élève l'emporte).
+CREATE TABLE IF NOT EXISTS exceptions_eleve (
+    eleve_nom TEXT NOT NULL,
+    eleve_prenom TEXT NOT NULL,
+    tarif_horaire REAL NOT NULL,
+    PRIMARY KEY (eleve_nom, eleve_prenom)
 );

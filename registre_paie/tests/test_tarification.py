@@ -119,3 +119,108 @@ def test_bareme_est_un_parametre_pas_code_en_dur():
 
     assert isinstance(resultat, ResultatSeance)
     assert resultat.tarif_horaire == 9999
+
+
+# --- Exceptions V2 (§7-C, §10) ------------------------------------------------
+
+
+def test_exception_enseignant_remplace_le_tarif_de_sa_categorie():
+    # Molo Aline : 1600 F/h en Primaire au lieu des 1500 F/h du barème (§7-C).
+    seance = faire_seance(
+        enseignant="MOLO ALINE", matiere="Mathématiques", niveau_de_classe="CE1", classe="CE1", duree_minutes=60
+    )
+
+    resultat = calculer_resultat_seance(
+        seance, BAREME_PAR_DEFAUT, exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600}
+    )
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_horaire == 1600
+    assert resultat.tarif_exceptionnel is True
+    assert resultat.source_tarif == "niveau"  # la catégorie reste déterminée par le niveau
+
+
+def test_exception_enseignant_ne_sapplique_qua_sa_propre_categorie():
+    # L'exception de Molo Aline est scopée à Primaire : une séance Collège
+    # pour la même enseignante reste au tarif standard.
+    seance = faire_seance(
+        enseignant="MOLO ALINE", matiere="Mathématiques", niveau_de_classe="6EME", classe="6EME", duree_minutes=60
+    )
+
+    resultat = calculer_resultat_seance(
+        seance, BAREME_PAR_DEFAUT, exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600}
+    )
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_horaire == BAREME_PAR_DEFAUT["Collège"]
+    assert resultat.tarif_exceptionnel is False
+
+
+def test_exception_eleve_force_le_tarif_quel_que_soit_matiere_et_niveau():
+    # §10 : un tarif forcé par élève l'emporte, y compris sur une matière
+    # langue seule qui aurait normalement priorité (§5, règle 1).
+    seance = faire_seance(
+        eleve_nom="HUGO", eleve_prenom="X", matiere="ANGLAIS", niveau_de_classe="CE1", classe="CE1", duree_minutes=60
+    )
+
+    resultat = calculer_resultat_seance(
+        seance, BAREME_PAR_DEFAUT, exceptions_eleve={("HUGO", "X"): 5000}
+    )
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_horaire == 5000
+    assert resultat.source_tarif == "eleve"
+    assert resultat.tarif_exceptionnel is True
+
+
+def test_exception_eleve_paye_meme_si_niveau_non_resolu():
+    # Un tarif forcé ne dépend pas du niveau : la séance n'est plus signalée
+    # "non résolue" pour cet élève, contrairement au cas général (§5).
+    seance = faire_seance(
+        eleve_nom="HUGO", eleve_prenom="X", matiere="Mathématiques", niveau_de_classe="", classe="", duree_minutes=60
+    )
+
+    resultat = calculer_resultat_seance(
+        seance, BAREME_PAR_DEFAUT, exceptions_eleve={("HUGO", "X"): 5000}
+    )
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_horaire == 5000
+    assert resultat.niveau_resolu is None
+    assert resultat.montant == 5000
+
+
+def test_exception_eleve_prioritaire_sur_exception_enseignant():
+    # Règle de priorité confirmée par le client : si les deux s'appliquent à
+    # la même séance, le tarif élève l'emporte sur le tarif enseignant.
+    seance = faire_seance(
+        enseignant="MOLO ALINE",
+        eleve_nom="HUGO",
+        eleve_prenom="X",
+        matiere="Mathématiques",
+        niveau_de_classe="CE1",
+        classe="CE1",
+        duree_minutes=60,
+    )
+
+    resultat = calculer_resultat_seance(
+        seance,
+        BAREME_PAR_DEFAUT,
+        exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600},
+        exceptions_eleve={("HUGO", "X"): 5000},
+    )
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_horaire == 5000
+    assert resultat.source_tarif == "eleve"
+
+
+def test_sans_exception_configuree_comportement_identique_a_la_v1():
+    # exceptions_enseignant/exceptions_eleve omis (défaut None) -> aucun
+    # changement de comportement par rapport à V1.
+    seance = faire_seance(matiere="Mathématiques", niveau_de_classe="6EME", classe="6EME", duree_minutes=60)
+
+    resultat = calculer_resultat_seance(seance, BAREME_PAR_DEFAUT)
+
+    assert isinstance(resultat, ResultatSeance)
+    assert resultat.tarif_exceptionnel is False

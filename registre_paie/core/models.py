@@ -59,9 +59,12 @@ class ResultatSeance:
     duree_minutes: int
     niveau_resolu: str | None
     categorie_tarif: str
-    source_tarif: str  # "langue" ou "niveau"
+    source_tarif: str  # "langue", "niveau", ou "eleve" (tarif forcé, V2 §10)
     tarif_horaire: float
     montant: float  # exact, non arrondi (§7-E : l'arrondi n'intervient qu'au total personne)
+    # V2 (§7-C, §10) : True si tarif_horaire vient d'une exception (enseignant ou
+    # élève) plutôt que du barème global — pure info d'audit, ne change pas montant.
+    tarif_exceptionnel: bool = False
 
 
 @dataclass(frozen=True)

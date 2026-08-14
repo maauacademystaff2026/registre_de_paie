@@ -63,6 +63,8 @@ def _calculer(conn, annuaire, seances):
         exclusions=exclusions,
         versements_15=versements,
         bareme=bareme,
+        exceptions_enseignant=repo.lire_exceptions_enseignant(conn),
+        exceptions_eleve=repo.lire_exceptions_eleve(conn),
     )
 
 
@@ -100,15 +102,6 @@ def _afficher_resultats(resultat):
         nom, versement = ligne["Nom"], float(ligne["Versement du 15 (F CFA)"])
         versements[nom] = versement
         resultat.resultats_par_personne[nom].versement_15 = versement
-
-    st.dataframe(
-        style.avec_total(
-            pd.DataFrame(_lignes_resultats(resultat)),
-            ["Heures payées", "Montant brut (F CFA)", "Versement du 15 (F CFA)", "Net à payer (F CFA)"],
-            "Nom",
-        ),
-        hide_index=True,
-    )
 
     total_brut = sum(r.montant_brut for r in resultat.resultats_par_personne.values())
     total_net = sum(r.net_a_payer for r in resultat.resultats_par_personne.values())
@@ -164,6 +157,9 @@ def _afficher_a_verifier(resultat):
         st.success("Tous les intervenants sont reconnus dans l'annuaire.")
 
 
+_LABEL_SOURCE_TARIF = {"langue": "Langue", "niveau": "Niveau", "eleve": "Élève (forcé)"}
+
+
 def _afficher_detail_par_personne(resultat):
     st.subheader("5. Détail par séance")
     noms = sorted(resultat.resultats_par_personne)
@@ -187,7 +183,8 @@ def _afficher_detail_par_personne(resultat):
                         "Matière": d.seance.matiere,
                         "Durée (H)": f"{d.duree_minutes // 60:02d}:{d.duree_minutes % 60:02d}",
                         "Tarif (F CFA/h)": d.tarif_horaire,
-                        "Source": "Langue" if d.source_tarif == "langue" else "Niveau",
+                        "Source": _LABEL_SOURCE_TARIF.get(d.source_tarif, d.source_tarif),
+                        "Personnalisé": "Oui" if d.tarif_exceptionnel else "",
                         "Montant (F CFA)": d.montant,
                     }
                     for d in details

@@ -35,6 +35,56 @@ def test_exclusions_vides_par_defaut_puis_modifiables():
     assert repo.lire_exclusions(conn) == set()
 
 
+def test_exceptions_enseignant_vides_par_defaut_puis_crud():
+    conn = _conn()
+    assert repo.lire_exceptions_enseignant(conn) == {}
+
+    repo.definir_exception_enseignant(conn, "MOLO ALINE", "Primaire", 1600)
+    assert repo.lire_exceptions_enseignant(conn) == {("MOLO ALINE", "Primaire"): 1600}
+
+    repo.definir_exception_enseignant(conn, "MOLO ALINE", "Primaire", 1700)
+    assert repo.lire_exceptions_enseignant(conn) == {("MOLO ALINE", "Primaire"): 1700}
+
+    repo.supprimer_exception_enseignant(conn, "MOLO ALINE", "Primaire")
+    assert repo.lire_exceptions_enseignant(conn) == {}
+
+
+def test_exceptions_eleve_vides_par_defaut_puis_crud():
+    conn = _conn()
+    assert repo.lire_exceptions_eleve(conn) == {}
+
+    repo.definir_exception_eleve(conn, "HUGO", "X", 5000)
+    assert repo.lire_exceptions_eleve(conn) == {("HUGO", "X"): 5000}
+
+    repo.definir_exception_eleve(conn, "HUGO", "X", 5500)
+    assert repo.lire_exceptions_eleve(conn) == {("HUGO", "X"): 5500}
+
+    repo.supprimer_exception_eleve(conn, "HUGO", "X")
+    assert repo.lire_exceptions_eleve(conn) == {}
+
+
+def test_tarif_exceptionnel_persiste_et_relu_avec_le_detail_seance():
+    conn = _conn()
+    seance = faire_seance(
+        enseignant="MOLO ALINE", niveau_de_classe="CE1", classe="CE1", matiere="Mathématiques", duree_minutes=60
+    )
+    resultat = agreger(
+        seances=[seance],
+        personnes_connues={"MOLO ALINE"},
+        exclusions=set(),
+        versements_15={},
+        bareme=BAREME_PAR_DEFAUT,
+        exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600},
+    )
+
+    repo.enregistrer_calcul_mensuel(conn, 2026, 7, resultat)
+    mois = repo.charger_mois(conn, 2026, 7)
+    details = repo.charger_details_seances(conn, mois.resultats[0].id)
+
+    assert details[0]["tarif_exceptionnel"] == 1
+    assert details[0]["tarif_horaire"] == 1600
+
+
 def _resultat_exemple():
     seance = faire_seance(
         enseignant="X",

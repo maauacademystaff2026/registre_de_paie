@@ -24,6 +24,8 @@ def agreger(
     exclusions: set[str],
     versements_15: dict[str, float],
     bareme: dict[str, float],
+    exceptions_enseignant: dict[tuple[str, str], float] | None = None,
+    exceptions_eleve: dict[tuple[str, str], float] | None = None,
 ) -> ResultatCalculMensuel:
     """Calcule le résultat mensuel complet.
 
@@ -31,6 +33,9 @@ def agreger(
     - `exclusions` : noms cochés "Exclu" (§7-A) — toujours dans personnes_connues.
     - `versements_15` : avance déjà versée par nom (§6), défaut 0 si absent.
     - `bareme` : tarifs F CFA/heure par catégorie, ex. tarification.BAREME_PAR_DEFAUT.
+    - `exceptions_enseignant`, `exceptions_eleve` : overrides V2 (§7-C, §10),
+      voir core/tarification.py:calculer_resultat_seance. Optionnels — une
+      année sans exception configurée se comporte exactement comme en V1.
     """
     seances_par_enseignant: dict[str, list[Seance]] = {}
     for seance in seances:
@@ -50,7 +55,9 @@ def agreger(
 
         details = []
         for seance in seances_personne:
-            calcul = calculer_resultat_seance(seance, bareme)
+            calcul = calculer_resultat_seance(
+                seance, bareme, exceptions_enseignant, exceptions_eleve
+            )
             if isinstance(calcul, SeanceNonResolue):
                 resultat.seances_non_resolues.append(calcul)
             else:

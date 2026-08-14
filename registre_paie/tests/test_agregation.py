@@ -144,6 +144,34 @@ def test_versement_du_15_deduit_du_brut_arrondi():
     assert r.net_a_payer == 1500
 
 
+def test_agreger_applique_les_exceptions_enseignant_et_eleve():
+    # §7-C, §10 : agreger() doit transmettre les deux dicts d'exceptions
+    # jusqu'à core/tarification.py, séance par séance.
+    seance_exception_enseignant = faire_seance(
+        enseignant="MOLO ALINE", eleve_nom="A", matiere="Mathématiques",
+        niveau_de_classe="CE1", classe="CE1", duree_minutes=60,
+    )
+    seance_exception_eleve = faire_seance(
+        enseignant="MOLO ALINE", eleve_nom="HUGO", eleve_prenom="X", matiere="Mathématiques",
+        niveau_de_classe="6EME", classe="6EME", duree_minutes=60,
+    )
+
+    resultat = agreger(
+        seances=[seance_exception_enseignant, seance_exception_eleve],
+        personnes_connues={"MOLO ALINE"},
+        exclusions=set(),
+        versements_15={},
+        bareme=BAREME_PAR_DEFAUT,
+        exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600},
+        exceptions_eleve={("HUGO", "X"): 5000},
+    )
+
+    r = resultat.resultats_par_personne["MOLO ALINE"]
+    montants = {d.montant for d in r.details}
+    assert montants == {1600, 5000}
+    assert r.montant_brut == 1600 + 5000
+
+
 def test_seance_non_resolue_exclue_du_calcul_automatique():
     seance_ok = faire_seance(enseignant="X", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
     seance_non_resolue = faire_seance(enseignant="X", niveau_de_classe="", classe="", matiere="Mathématiques", duree_minutes=60)
