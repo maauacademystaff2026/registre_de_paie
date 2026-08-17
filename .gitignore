@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local runtime data — never git-tracked. On Streamlit Community Cloud the
+# app's filesystem is rebuilt from a fresh git clone on every deploy, so a
+# committed .db file gets overwritten (and any real data entered directly on
+# the deployed app gets silently lost) every time this repo is pushed.
+registre_paie/registre_paie.db
+registre_paie/streamlit.log
