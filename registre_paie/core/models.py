@@ -83,7 +83,15 @@ class ResultatPersonne:
     nom: str
     exclu: bool = False
     details: list[ResultatSeance] = field(default_factory=list)
+    # §6 (mis à jour) : montant calculé (heures travaillées du 1er au 15,
+    # mêmes règles de tarification que le reste du mois) — jamais saisi
+    # manuellement. Voir core/agregation.py:agreger.
     versement_15: float = 0.0
+    # Fait distinct du montant : l'avance a-t-elle réellement été remise à la
+    # personne ? Décide seule si versement_15 est déduit du net à payer.
+    # Défaut à False : rien n'est déduit silencieusement tant que ce n'est
+    # pas confirmé (voir ui/ecran_calcul.py et ui/ecran_historique.py).
+    versement_15_verse: bool = False
 
     @property
     def heures_payees_minutes(self) -> int:
@@ -108,7 +116,9 @@ class ResultatPersonne:
 
     @property
     def net_a_payer(self) -> float:
-        return self.montant_brut - self.versement_15
+        if self.versement_15_verse:
+            return self.montant_brut - self.versement_15
+        return self.montant_brut
 
 
 @dataclass(frozen=True)

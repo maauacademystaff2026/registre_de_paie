@@ -18,6 +18,7 @@ _EN_TETES_RESULTATS = (
     "Heures payées",
     "Montant brut (F CFA)",
     "Versement du 15 (F CFA)",
+    "Versement versé ?",
     "Net à payer (F CFA)",
 )
 
@@ -50,14 +51,22 @@ def _ecrire_feuille_resultats(feuille: Worksheet, resultat: ResultatCalculMensue
         r = resultat.resultats_par_personne[nom]
         heures = r.heures_payees_minutes / 60
         feuille.append(
-            (nom, "Oui" if r.exclu else "", round(heures, 2), r.montant_brut, r.versement_15, r.net_a_payer)
+            (
+                nom,
+                "Oui" if r.exclu else "",
+                round(heures, 2),
+                r.montant_brut,
+                r.versement_15,
+                "Oui" if r.versement_15_verse else "Non",
+                r.net_a_payer,
+            )
         )
         total_heures += heures
         total_brut += r.montant_brut
         total_versement += r.versement_15
         total_net += r.net_a_payer
 
-    feuille.append(("TOTAL", "", round(total_heures, 2), total_brut, total_versement, total_net))
+    feuille.append(("TOTAL", "", round(total_heures, 2), total_brut, total_versement, "", total_net))
 
 
 def _ecrire_feuille_detail(feuille: Worksheet, resultat: ResultatCalculMensuel) -> None:
@@ -102,6 +111,7 @@ _EN_TETES_HISTORIQUE = (
     "Heures payées",
     "Montant brut (F CFA)",
     "Versement du 15 (F CFA)",
+    "Versement versé ?",
     "Net à payer (F CFA)",
 )
 
@@ -128,6 +138,7 @@ def exporter_historique_annee(conn, annee: int, chemin_sortie) -> None:
                     round(r.heures_payees_minutes / 60, 2),
                     r.montant_brut,
                     r.versement_15,
+                    "Oui" if r.versement_15_verse else "Non",
                     r.net_a_payer,
                 )
             )

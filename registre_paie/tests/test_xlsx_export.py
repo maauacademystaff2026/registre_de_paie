@@ -34,7 +34,8 @@ def _resultat_exemple():
         seances=seances,
         personnes_connues={"X", "Y"},
         exclusions={"Y"},
-        versements_15={"X": 500},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -56,14 +57,16 @@ def test_feuille_resultats_contient_les_montants_et_le_total(tmp_path):
 
     assert lignes[0] == (
         "Nom", "Exclu", "Heures payées", "Montant brut (F CFA)",
-        "Versement du 15 (F CFA)", "Net à payer (F CFA)",
+        "Versement du 15 (F CFA)", "Versement versé ?", "Net à payer (F CFA)",
     )
 
     par_nom = {ligne[0]: ligne for ligne in lignes[1:]}
     # openpyxl relit une cellule "" écrite comme None -> c'est le comportement
-    # normal d'un round-trip Excel, pas un bug de l'export.
-    assert par_nom["X"] == ("X", None, 1.0, 2000, 500, 1500)
-    assert par_nom["Y"] == ("Y", "Oui", 1.5, 0, 0, 0)
+    # normal d'un round-trip Excel, pas un bug de l'export. Séance datée du
+    # 1er (défaut de faire_seance) -> Versement du 15 égale le brut ; jamais
+    # versé par défaut (Non) -> Net à payer égale le brut, pas de déduction.
+    assert par_nom["X"] == ("X", None, 1.0, 2000, 2000, "Non", 2000)
+    assert par_nom["Y"] == ("Y", "Oui", 1.5, 0, 0, "Non", 0)
     assert par_nom["TOTAL"][3] == 2000  # montant brut total : Y exclu ne compte pas
 
 

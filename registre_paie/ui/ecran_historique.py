@@ -21,6 +21,7 @@ def _afficher_tableau_resultats(calcul):
                 "Heures payées": round(r.heures_payees_minutes / 60, 2),
                 "Montant brut (F CFA)": r.montant_brut,
                 "Versement du 15 (F CFA)": r.versement_15,
+                "Versé": "Oui" if r.versement_15_verse else "",
                 "Net à payer (F CFA)": r.net_a_payer,
             }
             for r in calcul.resultats
@@ -41,6 +42,24 @@ def _afficher_tableau_resultats(calcul):
             f"{calcul.nb_seances_non_resolues} séance(s) non résolue(s), "
             f"{calcul.nb_intervenants_inconnus} intervenant(s) inconnu(s)."
         )
+
+
+def _afficher_confirmation_versement_15(conn, calcul):
+    candidats = [r for r in calcul.resultats if r.versement_15 > 0]
+    if not candidats:
+        return
+
+    st.markdown("**Confirmer le Versement du 15**")
+    st.caption(
+        "Cochez pour les personnes ayant réellement reçu leur avance calculée — "
+        "« Net à payer » est recalculé et enregistré immédiatement."
+    )
+    for r in candidats:
+        montant = f"{r.versement_15:,.0f} F CFA".replace(",", " ")
+        nouveau_verse = st.checkbox(f"{r.nom} — {montant}", value=r.versement_15_verse, key=f"verse_{r.id}")
+        if nouveau_verse != r.versement_15_verse:
+            repo.definir_versement_15_verse(conn, r.id, nouveau_verse)
+            st.rerun()
 
 
 def _afficher_detail_par_personne(conn, calcul):
@@ -74,6 +93,7 @@ def afficher(conn):
     st.caption(f"Calculé le {calcul.date_calcul}")
 
     _afficher_tableau_resultats(calcul)
+    _afficher_confirmation_versement_15(conn, calcul)
     _afficher_detail_par_personne(conn, calcul)
 
     st.subheader(f"Export de l'année {annee}")

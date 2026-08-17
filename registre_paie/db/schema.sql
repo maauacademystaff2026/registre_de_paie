@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS resultats_personne (
     heures_payees_minutes INTEGER NOT NULL,
     montant_brut INTEGER NOT NULL,
     versement_15 REAL NOT NULL DEFAULT 0,
+    -- §6 (mis à jour) : l'avance calculée (versement_15) n'est déduite du net
+    -- que si elle a réellement été remise à la personne. Défaut 0 (non
+    -- versée) : rien n'est déduit tant que ce n'est pas confirmé.
+    versement_15_verse INTEGER NOT NULL DEFAULT 0 CHECK (versement_15_verse IN (0, 1)),
     net_a_payer REAL NOT NULL
 );
 

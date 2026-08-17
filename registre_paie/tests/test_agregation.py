@@ -21,7 +21,8 @@ def test_absence_de_l_eleve_est_payee_en_entier():
         seances=[seance],
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -38,7 +39,8 @@ def test_absence_du_professeur_nest_jamais_payable():
         seances=[seance],
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -63,7 +65,8 @@ def test_retard_paye_en_entier_sur_la_duree_totale():
         seances=[seance],
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -79,7 +82,8 @@ def test_intervenant_absent_de_lannuaire_est_signale_non_paye():
         seances=[seance],
         personnes_connues=set(),  # absent de l'annuaire, §7-B
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -97,7 +101,8 @@ def test_personne_exclue_nest_pas_payee_mais_reste_tracee():
         seances=[seance],
         personnes_connues={"NDONGO NGA MAXIME"},
         exclusions={"NDONGO NGA MAXIME"},
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -121,27 +126,108 @@ def test_arrondi_applique_sur_le_total_personne_pas_par_seance():
         seances=seances,
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
     assert resultat.resultats_par_personne["X"].montant_brut == 333
 
 
-def test_versement_du_15_deduit_du_brut_arrondi():
-    seance = faire_seance(enseignant="X", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+def _seances_quinzaine_et_hors_quinzaine():
+    # Une séance datée du 10 (première quinzaine) et une datée du 20
+    # (seconde quinzaine), même enseignant, même tarif (2000 F/h, Collège).
+    return [
+        faire_seance(enseignant="X", date="2026-07-10", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60),
+        faire_seance(enseignant="X", date="2026-07-20", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60),
+    ]
 
+
+def test_versement_du_15_calcule_a_partir_des_seances_du_1_au_15():
+    # §6 (mis à jour) : Versement du 15 = montant des séances du 1er au 15 du
+    # mois calculé, jamais saisi -- ici seule la séance du 10 compte.
     resultat = agreger(
-        seances=[seance],
+        seances=_seances_quinzaine_et_hors_quinzaine(),
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={"X": 500},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
     r = resultat.resultats_par_personne["X"]
-    assert r.montant_brut == 2000
-    assert r.net_a_payer == 1500
+    assert r.montant_brut == 4000
+    assert r.versement_15 == 2000  # seule la séance du 10 (<= 15) compte
+
+
+def test_versement_du_15_ignore_les_seances_dun_autre_mois():
+    # Une comparaison de chaînes naïve ("date <= ...-15") inclurait à tort une
+    # séance de juin ; le filtre doit vérifier le mois cible explicitement.
+    seances = [
+        faire_seance(enseignant="X", date="2026-06-20", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60),
+        faire_seance(enseignant="X", date="2026-07-20", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60),
+    ]
+
+    resultat = agreger(
+        seances=seances, personnes_connues={"X"}, exclusions=set(), annee=2026, mois=7, bareme=BAREME_PAR_DEFAUT
+    )
+
+    r = resultat.resultats_par_personne["X"]
+    assert r.montant_brut == 4000  # les deux séances comptent pour le mois de juillet
+    assert r.versement_15 == 0  # aucune des deux n'est datée du 1-15 juillet
+
+
+def test_versement_du_15_zero_si_travail_seulement_apres_le_15():
+    seance = faire_seance(enseignant="X", date="2026-07-20", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+
+    resultat = agreger(
+        seances=[seance], personnes_connues={"X"}, exclusions=set(), annee=2026, mois=7, bareme=BAREME_PAR_DEFAUT
+    )
+
+    assert resultat.resultats_par_personne["X"].versement_15 == 0
+
+
+def test_versement_du_15_zero_pour_une_personne_exclue():
+    seance = faire_seance(enseignant="X", date="2026-07-10", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+
+    resultat = agreger(
+        seances=[seance], personnes_connues={"X"}, exclusions={"X"}, annee=2026, mois=7, bareme=BAREME_PAR_DEFAUT
+    )
+
+    assert resultat.resultats_par_personne["X"].versement_15 == 0
+
+
+def test_net_a_payer_egale_le_brut_tant_que_versement_15_non_confirme_verse():
+    # Défaut confirmé : versement_15_verse=False -> rien n'est déduit
+    # silencieusement, même si Versement du 15 > 0.
+    resultat = agreger(
+        seances=_seances_quinzaine_et_hors_quinzaine(),
+        personnes_connues={"X"},
+        exclusions=set(),
+        annee=2026,
+        mois=7,
+        bareme=BAREME_PAR_DEFAUT,
+    )
+
+    r = resultat.resultats_par_personne["X"]
+    assert r.versement_15_verse is False
+    assert r.net_a_payer == r.montant_brut == 4000
+
+
+def test_net_a_payer_deduit_versement_15_une_fois_confirme_verse():
+    resultat = agreger(
+        seances=_seances_quinzaine_et_hors_quinzaine(),
+        personnes_connues={"X"},
+        exclusions=set(),
+        annee=2026,
+        mois=7,
+        bareme=BAREME_PAR_DEFAUT,
+    )
+
+    r = resultat.resultats_par_personne["X"]
+    r.versement_15_verse = True  # simule la case "Versé" cochée dans l'écran
+
+    assert r.net_a_payer == 4000 - 2000 == 2000
 
 
 def test_agreger_applique_les_exceptions_enseignant_et_eleve():
@@ -160,7 +246,8 @@ def test_agreger_applique_les_exceptions_enseignant_et_eleve():
         seances=[seance_exception_enseignant, seance_exception_eleve],
         personnes_connues={"MOLO ALINE"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
         exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600},
         exceptions_eleve={("HUGO", "X"): 5000},
@@ -180,7 +267,8 @@ def test_seance_non_resolue_exclue_du_calcul_automatique():
         seances=[seance_ok, seance_non_resolue],
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 

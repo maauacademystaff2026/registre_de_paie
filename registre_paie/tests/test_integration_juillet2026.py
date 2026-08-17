@@ -70,7 +70,8 @@ def _calculer_juillet_2026():
         seances=seances,
         personnes_connues=personnes_connues,
         exclusions=EXCLUSIONS_JUILLET_2026,
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 

@@ -52,16 +52,16 @@ def _confirmer_periode(seances):
     return int(annee), int(mois)
 
 
-def _calculer(conn, annuaire, seances):
+def _calculer(conn, annuaire, seances, annee, mois):
     personnes_connues = {p.nom for p in annuaire}
     exclusions = repo.lire_exclusions(conn)
     bareme = repo.lire_bareme(conn)
-    versements = st.session_state.get("versements_15", {})
     return agreger(
         seances=seances,
         personnes_connues=personnes_connues,
         exclusions=exclusions,
-        versements_15=versements,
+        annee=annee,
+        mois=mois,
         bareme=bareme,
         exceptions_enseignant=repo.lire_exceptions_enseignant(conn),
         exceptions_eleve=repo.lire_exceptions_eleve(conn),
@@ -76,6 +76,7 @@ def _lignes_resultats(resultat):
             "Heures payées": round(r.heures_payees_minutes / 60, 2),
             "Montant brut (F CFA)": r.montant_brut,
             "Versement du 15 (F CFA)": r.versement_15,
+            "Versé": r.versement_15_verse,
             "Net à payer (F CFA)": r.net_a_payer,
         }
         for nom, r in sorted(resultat.resultats_par_personne.items())
@@ -89,19 +90,33 @@ def _afficher_resultats(resultat):
         st.warning("Aucune personne payable ce mois-ci.")
         return
 
-    st.caption("Seul le champ « Versement du 15 » est modifiable ci-dessous.")
+    st.caption(
+        "« Versement du 15 » est calculé automatiquement (heures travaillées du 1er au 15 "
+        "du mois, mêmes règles de tarification) — non modifiable. Cochez « Versé » "
+        "uniquement pour les personnes ayant réellement reçu cette avance : "
+        "« Net à payer » n'en déduit alors le montant."
+    )
     df_edite = st.data_editor(
         pd.DataFrame(_lignes_resultats(resultat)),
-        disabled=["Nom", "Exclu", "Heures payées", "Montant brut (F CFA)", "Net à payer (F CFA)"],
+        disabled=["Nom", "Exclu", "Heures payées", "Montant brut (F CFA)", "Versement du 15 (F CFA)", "Net à payer (F CFA)"],
         hide_index=True,
         key="editeur_resultats",
     )
 
-    versements = st.session_state.setdefault("versements_15", {})
+    # st.data_editor ne recalcule pas les colonnes désactivées (ex. Net à
+    # payer) dans le même rerun qu'une édition d'une autre colonne (ex.
+    # Versé) : sans le rerun explicite ci-dessous, la case se coche à l'écran
+    # mais le montant affiché reste celui d'avant le clic jusqu'à la
+    # prochaine interaction.
+    a_change = False
     for _, ligne in df_edite.iterrows():
-        nom, versement = ligne["Nom"], float(ligne["Versement du 15 (F CFA)"])
-        versements[nom] = versement
-        resultat.resultats_par_personne[nom].versement_15 = versement
+        r = resultat.resultats_par_personne[ligne["Nom"]]
+        nouveau_verse = bool(ligne["Versé"])
+        if r.versement_15_verse != nouveau_verse:
+            r.versement_15_verse = nouveau_verse
+            a_change = True
+    if a_change:
+        st.rerun()
 
     total_brut = sum(r.montant_brut for r in resultat.resultats_par_personne.values())
     total_net = sum(r.net_a_payer for r in resultat.resultats_par_personne.values())
@@ -229,7 +244,7 @@ def afficher(conn):
     if annuaire is not None:
         annee, mois = _confirmer_periode(seances)
         if st.button("Calculer", type="primary"):
-            resultat_calcule = _calculer(conn, annuaire, seances)
+            resultat_calcule = _calculer(conn, annuaire, seances, annee, mois)
             st.session_state["resultat_calcul"] = resultat_calcule
             st.session_state["periode_calcul"] = (annee, mois)
             repo.sauvegarder_brouillon(conn, annee, mois, resultat_calcule)
@@ -260,6 +275,6 @@ def afficher(conn):
     _afficher_detail_par_personne(resultat)
     _enregistrer_et_exporter(conn, resultat, annee, mois)
 
-    # Toute édition faite plus haut (versement du 15) doit elle aussi rester
+    # Toute édition faite plus haut (case « Versé ») doit elle aussi rester
     # récupérable après un rafraîchissement, d'où la resauvegarde ici.
     repo.sauvegarder_brouillon(conn, annee, mois, resultat)

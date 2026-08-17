@@ -43,10 +43,16 @@ def _migrer_schema(conn: sqlite3.Connection) -> None:
     """`CREATE TABLE IF NOT EXISTS` (schema.sql) ne retrofit pas de colonne sur une
     table déjà existante d'une DB déployée avant l'ajout des exceptions V2 : on
     l'ajoute ici si absente, sans jamais toucher aux lignes déjà enregistrées."""
-    colonnes = {ligne["name"] for ligne in conn.execute("PRAGMA table_info(details_seances)")}
-    if "tarif_exceptionnel" not in colonnes:
+    colonnes_details = {ligne["name"] for ligne in conn.execute("PRAGMA table_info(details_seances)")}
+    if "tarif_exceptionnel" not in colonnes_details:
         conn.execute(
             "ALTER TABLE details_seances ADD COLUMN tarif_exceptionnel INTEGER NOT NULL DEFAULT 0"
+        )
+
+    colonnes_resultats = {ligne["name"] for ligne in conn.execute("PRAGMA table_info(resultats_personne)")}
+    if "versement_15_verse" not in colonnes_resultats:
+        conn.execute(
+            "ALTER TABLE resultats_personne ADD COLUMN versement_15_verse INTEGER NOT NULL DEFAULT 0"
         )
 
 
@@ -160,6 +166,7 @@ class ResultatPersonneHistorique:
     heures_payees_minutes: int
     montant_brut: int
     versement_15: float
+    versement_15_verse: bool
     net_a_payer: float
 
 
@@ -193,8 +200,9 @@ def enregistrer_calcul_mensuel(
         for nom, resultat_personne in resultat.resultats_par_personne.items():
             curseur = conn.execute(
                 "INSERT INTO resultats_personne "
-                "(calcul_id, nom, exclu, heures_payees_minutes, montant_brut, versement_15, net_a_payer) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(calcul_id, nom, exclu, heures_payees_minutes, montant_brut, versement_15, "
+                "versement_15_verse, net_a_payer) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     calcul_id,
                     nom,
@@ -202,6 +210,7 @@ def enregistrer_calcul_mensuel(
                     resultat_personne.heures_payees_minutes,
                     resultat_personne.montant_brut,
                     resultat_personne.versement_15,
+                    int(resultat_personne.versement_15_verse),
                     resultat_personne.net_a_payer,
                 ),
             )
@@ -291,7 +300,8 @@ def charger_mois(conn: sqlite3.Connection, annee: int, mois: int) -> CalculMensu
         return None
 
     lignes_resultats = conn.execute(
-        "SELECT id, nom, exclu, heures_payees_minutes, montant_brut, versement_15, net_a_payer "
+        "SELECT id, nom, exclu, heures_payees_minutes, montant_brut, versement_15, "
+        "versement_15_verse, net_a_payer "
         "FROM resultats_personne WHERE calcul_id = ? ORDER BY nom",
         (ligne_calcul["id"],),
     ).fetchall()
@@ -316,6 +326,7 @@ def charger_mois(conn: sqlite3.Connection, annee: int, mois: int) -> CalculMensu
                 heures_payees_minutes=l["heures_payees_minutes"],
                 montant_brut=l["montant_brut"],
                 versement_15=l["versement_15"],
+                versement_15_verse=bool(l["versement_15_verse"]),
                 net_a_payer=l["net_a_payer"],
             )
             for l in lignes_resultats
@@ -373,14 +384,17 @@ def effacer_brouillon(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def mettre_a_jour_versement_15(
-    conn: sqlite3.Connection, resultat_personne_id: int, versement_15: float
-) -> None:
-    """Corrige le versement du 15 d'un mois déjà enregistré et recalcule le
-    net à payer (§6) — utile en cas de correction après coup."""
+def definir_versement_15_verse(conn: sqlite3.Connection, resultat_personne_id: int, verse: bool) -> None:
+    """Confirme ou corrige, pour un mois déjà enregistré, si l'avance calculée
+    (versement_15) a réellement été remise à la personne, et recalcule le net
+    à payer en conséquence (§6, mis à jour). Contrairement à l'ancien
+    `mettre_a_jour_versement_15` qu'elle remplace, le MONTANT lui-même n'est
+    jamais retapé ici — seul ce fait (versé ou non) est corrigeable après coup,
+    puisqu'il peut n'être confirmé qu'après l'enregistrement du mois."""
     conn.execute(
-        "UPDATE resultats_personne SET versement_15 = ?, net_a_payer = montant_brut - ? "
+        "UPDATE resultats_personne SET versement_15_verse = ?, "
+        "net_a_payer = CASE WHEN ? THEN montant_brut - versement_15 ELSE montant_brut END "
         "WHERE id = ?",
-        (versement_15, versement_15, resultat_personne_id),
+        (int(verse), int(verse), resultat_personne_id),
     )
     conn.commit()

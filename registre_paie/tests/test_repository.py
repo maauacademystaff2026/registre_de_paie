@@ -72,7 +72,8 @@ def test_tarif_exceptionnel_persiste_et_relu_avec_le_detail_seance():
         seances=[seance],
         personnes_connues={"MOLO ALINE"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
         exceptions_enseignant={("MOLO ALINE", "Primaire"): 1600},
     )
@@ -100,7 +101,8 @@ def _resultat_exemple():
         seances=[seance, seance_non_resolue],
         personnes_connues={"X"},
         exclusions=set(),
-        versements_15={"X": 500},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
 
@@ -122,8 +124,9 @@ def test_enregistrer_et_charger_un_mois():
     r = mois.resultats[0]
     assert r.nom == "X"
     assert r.montant_brut == 2000
-    assert r.versement_15 == 500
-    assert r.net_a_payer == 1500
+    assert r.versement_15 == 2000  # séance datée du 1er (défaut de faire_seance) -> compte en entier
+    assert r.versement_15_verse is False  # défaut : rien n'est déduit tant que non confirmé
+    assert r.net_a_payer == 2000
 
     details = repo.charger_details_seances(conn, r.id)
     assert len(details) == 1
@@ -147,7 +150,8 @@ def test_reimport_meme_mois_remplace_lancien_calcul():
         seances=[seance_differente],
         personnes_connues={"Y"},
         exclusions=set(),
-        versements_15={},
+        annee=2026,
+        mois=7,
         bareme=BAREME_PAR_DEFAUT,
     )
     repo.enregistrer_calcul_mensuel(conn, 2026, 7, nouveau_resultat)
@@ -206,15 +210,25 @@ def test_brouillon_efface():
     assert repo.charger_brouillon(conn) is None
 
 
-def test_mettre_a_jour_versement_15_recalcule_le_net():
+def test_definir_versement_15_verse_recalcule_le_net():
+    # Remplace l'ancienne correction manuelle du montant : on ne confirme plus
+    # qu'un fait (l'avance a-t-elle été remise ?), jamais le montant lui-même.
     conn = _conn()
-    calcul_id = repo.enregistrer_calcul_mensuel(conn, 2026, 7, _resultat_exemple())
+    repo.enregistrer_calcul_mensuel(conn, 2026, 7, _resultat_exemple())
     mois = repo.charger_mois(conn, 2026, 7)
     resultat_personne_id = mois.resultats[0].id
+    assert mois.resultats[0].versement_15_verse is False
+    assert mois.resultats[0].net_a_payer == 2000
 
-    repo.mettre_a_jour_versement_15(conn, resultat_personne_id, 800)
+    repo.definir_versement_15_verse(conn, resultat_personne_id, True)
 
     mois_maj = repo.charger_mois(conn, 2026, 7)
     r = mois_maj.resultats[0]
-    assert r.versement_15 == 800
-    assert r.net_a_payer == 2000 - 800
+    assert r.versement_15_verse is True
+    assert r.net_a_payer == 2000 - r.versement_15 == 0
+
+    repo.definir_versement_15_verse(conn, resultat_personne_id, False)
+
+    mois_final = repo.charger_mois(conn, 2026, 7)
+    assert mois_final.resultats[0].versement_15_verse is False
+    assert mois_final.resultats[0].net_a_payer == 2000
