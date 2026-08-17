@@ -8,3 +8,8 @@ __pycache__/
 # the deployed app gets silently lost) every time this repo is pushed.
 registre_paie/registre_paie.db
 registre_paie/streamlit.log
+
+# Mot de passe de l'application (authentification) : local uniquement, jamais
+# committé. Sur Streamlit Community Cloud, la valeur se configure séparément
+# dans Paramètres de l'app -> Secrets, pas dans ce fichier.
+registre_paie/.streamlit/secrets.toml
