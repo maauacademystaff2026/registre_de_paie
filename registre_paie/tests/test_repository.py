@@ -210,6 +210,109 @@ def test_brouillon_efface():
     assert repo.charger_brouillon(conn) is None
 
 
+def test_reporter_versement_15_verse_sans_mois_existant():
+    # Premier calcul de ce mois : rien à reprendre, le résultat n'est pas
+    # touché et la fonction signale qu'aucun report n'a eu lieu.
+    conn = _conn()
+    resultat = _resultat_exemple()
+
+    a_reporte = repo.reporter_versement_15_verse(conn, 2026, 7, resultat)
+
+    assert a_reporte is False
+    assert resultat.resultats_par_personne["X"].versement_15_verse is False
+
+
+def test_reporter_versement_15_verse_reproduit_le_scenario_signale():
+    # Scénario exact signalé : un mois est enregistré avec une personne
+    # confirmée "Versé", puis les fichiers sont réimportés (correction des
+    # heures d'une AUTRE personne) et recalculés -- le nouveau calcul brut
+    # remet tout le monde à False par défaut (comportement de agreger()) ;
+    # reporter_versement_15_verse doit reprendre le True de X sans geler le
+    # montant corrigé de Y.
+    conn = _conn()
+    seance_x = faire_seance(enseignant="X", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+    seance_y_avant = faire_seance(enseignant="Y", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=30)
+    ancien_resultat = agreger(
+        seances=[seance_x, seance_y_avant],
+        personnes_connues={"X", "Y"},
+        exclusions=set(),
+        annee=2026,
+        mois=7,
+        bareme=BAREME_PAR_DEFAUT,
+    )
+    ancien_resultat.resultats_par_personne["X"].versement_15_verse = True
+    ancien_resultat.resultats_par_personne["Y"].versement_15_verse = True
+    repo.enregistrer_calcul_mensuel(conn, 2026, 7, ancien_resultat)
+
+    # "Réimport" : heures de Y corrigées (30 -> 90 min), X inchangé.
+    seance_y_corrigee = faire_seance(enseignant="Y", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=90)
+    nouveau_resultat = agreger(
+        seances=[seance_x, seance_y_corrigee],
+        personnes_connues={"X", "Y"},
+        exclusions=set(),
+        annee=2026,
+        mois=7,
+        bareme=BAREME_PAR_DEFAUT,
+    )
+    assert nouveau_resultat.resultats_par_personne["X"].versement_15_verse is False  # avant fix
+    assert nouveau_resultat.resultats_par_personne["Y"].versement_15_verse is False  # avant fix
+
+    a_reporte = repo.reporter_versement_15_verse(conn, 2026, 7, nouveau_resultat)
+
+    assert a_reporte is True
+    # X : statut Versé repris, jamais silencieusement réinitialisé.
+    assert nouveau_resultat.resultats_par_personne["X"].versement_15_verse is True
+    # Y : statut Versé repris aussi, MAIS le montant reflète la correction
+    # (90 min, pas figé sur l'ancien calcul à 30 min) -- la reprise ne gèle
+    # que le fait "versé", jamais les montants recalculés.
+    assert nouveau_resultat.resultats_par_personne["Y"].versement_15_verse is True
+    assert nouveau_resultat.resultats_par_personne["Y"].montant_brut == 3000  # 1h30 x 2000 F/h
+
+
+def test_reporter_versement_15_verse_personne_absente_de_lancien_calcul():
+    # Une personne apparue seulement dans le réimport (ex. séance ajoutée
+    # après coup) n'a rien à reprendre : reste au défaut sûr, pas d'erreur.
+    conn = _conn()
+    repo.enregistrer_calcul_mensuel(conn, 2026, 7, _resultat_exemple())  # ne contient que "X"
+
+    seance_nouvelle_personne = faire_seance(enseignant="Z", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+    resultat = agreger(
+        seances=[seance_nouvelle_personne],
+        personnes_connues={"Z"},
+        exclusions=set(),
+        annee=2026,
+        mois=7,
+        bareme=BAREME_PAR_DEFAUT,
+    )
+
+    a_reporte = repo.reporter_versement_15_verse(conn, 2026, 7, resultat)
+
+    assert a_reporte is True  # le mois existait déjà (pour "X")
+    assert resultat.resultats_par_personne["Z"].versement_15_verse is False
+
+
+def test_reporter_versement_15_verse_ignore_un_nom_qui_ne_correspond_pas_exactement():
+    # Correspondance stricte, comme partout ailleurs dans l'application (ex.
+    # "kamdem rich bill" vs "KAMDEM RICH BILL" ne sont jamais fusionnés) :
+    # une variante de casse ne doit pas être devinée, elle reste au défaut.
+    conn = _conn()
+    seance = faire_seance(enseignant="X", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+    ancien_resultat = agreger(
+        seances=[seance], personnes_connues={"X"}, exclusions=set(), annee=2026, mois=7, bareme=BAREME_PAR_DEFAUT
+    )
+    ancien_resultat.resultats_par_personne["X"].versement_15_verse = True
+    repo.enregistrer_calcul_mensuel(conn, 2026, 7, ancien_resultat)
+
+    seance_nom_different = faire_seance(enseignant="x", niveau_de_classe="6EME", classe="6EME", matiere="Mathématiques", duree_minutes=60)
+    nouveau_resultat = agreger(
+        seances=[seance_nom_different], personnes_connues={"x"}, exclusions=set(), annee=2026, mois=7, bareme=BAREME_PAR_DEFAUT
+    )
+
+    repo.reporter_versement_15_verse(conn, 2026, 7, nouveau_resultat)
+
+    assert nouveau_resultat.resultats_par_personne["x"].versement_15_verse is False
+
+
 def test_definir_versement_15_verse_recalcule_le_net():
     # Remplace l'ancienne correction manuelle du montant : on ne confirme plus
     # qu'un fait (l'avance a-t-elle été remise ?), jamais le montant lui-même.

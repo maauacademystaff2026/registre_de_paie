@@ -336,6 +336,27 @@ def charger_mois(conn: sqlite3.Connection, annee: int, mois: int) -> CalculMensu
     )
 
 
+def reporter_versement_15_verse(
+    conn: sqlite3.Connection, annee: int, mois: int, resultat: ResultatCalculMensuel
+) -> bool:
+    """Si (année, mois) a déjà un enregistrement, reprend le statut Versé de
+    chaque personne présente dans les deux calculs, en mutant `resultat` sur
+    place. Ce fait n'est dérivable ni des fichiers importés ni d'aucun réglage
+    global (barème, exclusions, exceptions) : un réimport recalcule tout le
+    reste à raison, mais ne doit jamais réinitialiser silencieusement ce fait-
+    là à "non versé", au risque de faire disparaître une avance déjà
+    confirmée payée à quelqu'un. Renvoie True si un report a eu lieu (pour
+    affichage à l'écran), False si (année, mois) n'existait pas encore."""
+    mois_existant = charger_mois(conn, annee, mois)
+    if mois_existant is None:
+        return False
+    verse_par_nom = {r.nom: r.versement_15_verse for r in mois_existant.resultats}
+    for nom, resultat_personne in resultat.resultats_par_personne.items():
+        if nom in verse_par_nom:
+            resultat_personne.versement_15_verse = verse_par_nom[nom]
+    return True
+
+
 def charger_details_seances(conn: sqlite3.Connection, resultat_personne_id: int) -> list[sqlite3.Row]:
     """Détail par séance d'une personne pour un mois donné (§8.2, audit)."""
     return conn.execute(

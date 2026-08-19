@@ -56,7 +56,7 @@ def _calculer(conn, annuaire, seances, annee, mois):
     personnes_connues = {p.nom for p in annuaire}
     exclusions = repo.lire_exclusions(conn)
     bareme = repo.lire_bareme(conn)
-    return agreger(
+    resultat = agreger(
         seances=seances,
         personnes_connues=personnes_connues,
         exclusions=exclusions,
@@ -66,6 +66,11 @@ def _calculer(conn, annuaire, seances, annee, mois):
         exceptions_enseignant=repo.lire_exceptions_enseignant(conn),
         exceptions_eleve=repo.lire_exceptions_eleve(conn),
     )
+    # Un réimport de ce mois ne doit jamais réinitialiser silencieusement le
+    # statut « Versé » déjà confirmé — ce fait n'est dérivable ni des
+    # fichiers ni d'aucun réglage global, voir repo.reporter_versement_15_verse.
+    report_effectue = repo.reporter_versement_15_verse(conn, annee, mois, resultat)
+    return resultat, report_effectue
 
 
 def _lignes_resultats(resultat):
@@ -83,12 +88,19 @@ def _lignes_resultats(resultat):
     ]
 
 
-def _afficher_resultats(resultat):
+def _afficher_resultats(resultat, versement_15_reporte=False):
     st.subheader("3. Résultats")
 
     if not resultat.resultats_par_personne:
         st.warning("Aucune personne payable ce mois-ci.")
         return
+
+    if versement_15_reporte:
+        st.info(
+            "Ce mois avait déjà été enregistré — le statut « Versé » de chaque personne a été "
+            "repris de ce précédent enregistrement. Vérifiez-le si les données réimportées ont "
+            "changé pour une personne concernée."
+        )
 
     st.caption(
         "« Versement du 15 » est calculé automatiquement (heures travaillées du 1er au 15 "
@@ -244,9 +256,10 @@ def afficher(conn):
     if annuaire is not None:
         annee, mois = _confirmer_periode(seances)
         if st.button("Calculer", type="primary"):
-            resultat_calcule = _calculer(conn, annuaire, seances, annee, mois)
+            resultat_calcule, report_effectue = _calculer(conn, annuaire, seances, annee, mois)
             st.session_state["resultat_calcul"] = resultat_calcule
             st.session_state["periode_calcul"] = (annee, mois)
+            st.session_state["versement_15_reporte"] = report_effectue
             repo.sauvegarder_brouillon(conn, annee, mois, resultat_calcule)
 
     # Un rafraîchissement du navigateur (F5) ouvre une toute nouvelle session
@@ -270,7 +283,7 @@ def afficher(conn):
         return
 
     annee, mois = st.session_state["periode_calcul"]
-    _afficher_resultats(resultat)
+    _afficher_resultats(resultat, st.session_state.get("versement_15_reporte", False))
     _afficher_a_verifier(resultat)
     _afficher_detail_par_personne(resultat)
     _enregistrer_et_exporter(conn, resultat, annee, mois)
